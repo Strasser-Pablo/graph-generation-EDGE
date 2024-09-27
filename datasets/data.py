@@ -117,7 +117,50 @@ def get_data(args):
         test_evaluator = GenericGraphEvaluator(test_nx_graphs, device=args.device)
 
         monitoring_statistics = ['clustering_mmd', 'orbits_mmd', 'spectral_mmd', 'degree_mmd', 'mmd_linear', 'mmd_rbf']
+    elif args.dataset in ['sbm20k','reddit12k','github_stargazers']:
+        repeat = 64 
+        num_node_classes = None
+        num_edge_classes = 2
+        num_node_feat = None
+        nx_graphs = pkl.load(open(f"graphs/{args.dataset}.pkl", 'rb'))
+        train_nx_graphs = nx_graphs["train"]
+        eval_nx_graphs = nx_graphs["val"]
+        test_nx_graphs = nx_graphs["test"]
+        print('len train',len(train_nx_graphs))
+        print('len val',len(eval_nx_graphs))
+        print('len test',len(test_nx_graphs))
 
+        train_pygraphs = []
+        eval_pygraphs = []
+        test_pygraphs = []
+
+        max_degree = max([max([d for n, d in train_nx_graph.degree()]) for train_nx_graph in train_nx_graphs])
+        for nx_graph in train_nx_graphs:
+            pyg_data = preprocess(nx_graph, degree=args.degree)
+            train_pygraphs.append(pyg_data)
+
+        for nx_graph in eval_nx_graphs:
+            pyg_data = preprocess(nx_graph, degree=args.degree)
+            eval_pygraphs.append(pyg_data)
+
+        for nx_graph in test_nx_graphs:
+            pyg_data = preprocess(nx_graph, degree=args.degree)
+            test_pygraphs.append(pyg_data)
+            
+        train_set = ConcatDataset([GraphDataset(train_pygraphs) for _ in range(repeat)])
+        eval_set = GraphDataset(eval_pygraphs)
+        test_set = GraphDataset(test_pygraphs)
+
+        if args.empty_graph_sampler == 'empirical':
+            initial_graph_sampler = EmpiricalEmptyGraphGenerator(train_pygraphs, degree=args.degree)
+        elif args.empty_graph_sampler == 'neural':
+            neural_attr_sampler = torch.load(f'graphs/{args.dataset}_degree_sampler.pt', map_location=args.device)
+            initial_graph_sampler = NeuralEmptyGraphGenerator(train_pygraphs, neural_attr_sampler, degree=args.degree, device=args.device)
+
+        eval_evaluator = GenericGraphEvaluator(eval_nx_graphs, device=args.device)
+        test_evaluator = GenericGraphEvaluator(test_nx_graphs, device=args.device)
+
+        monitoring_statistics = ['clustering_mmd', 'orbits_mmd', 'spectral_mmd', 'degree_mmd']
     else:
         raise NotImplementedError
     augmented_feature_dict = {k:FEATURE_EXTRACTOR[k]['data_spec'] for k in args.augmented_features}
